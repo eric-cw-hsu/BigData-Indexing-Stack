@@ -6,6 +6,7 @@ import (
 	"eric-cw-hsu.github.io/routes"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/spf13/viper"
 )
 
 type App struct {
@@ -16,8 +17,8 @@ type App struct {
 func NewApp() *App {
 	app := &App{
 		redis: redis.NewClient(&redis.Options{
-			Addr: "localhost:16379",
-			DB:   0,
+			Addr: viper.GetString("REDIS.ADDR"),
+			DB:   viper.GetInt("REDIS.DB"),
 		}),
 	}
 
