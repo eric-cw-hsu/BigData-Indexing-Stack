@@ -9,10 +9,11 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
+	"eric-cw-hsu.github.io/configs"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
-	"github.com/spf13/viper"
 )
 
 type GooglePublicKey struct {
@@ -28,7 +29,14 @@ type GooglePublicKeysResponse struct {
 	Keys []GooglePublicKey `json:"keys"`
 }
 
+var googlePublicKeysCache []GooglePublicKey
+var googlePublicKeysCacheTime time.Time
+
 func fetchGooglePublicKey() ([]GooglePublicKey, error) {
+	if len(googlePublicKeysCache) > 0 && time.Since(googlePublicKeysCacheTime) < 1*time.Hour {
+		return googlePublicKeysCache, nil
+	}
+
 	response, err := http.Get("https://www.googleapis.com/oauth2/v3/certs")
 	if err != nil {
 		return nil, err
@@ -48,6 +56,9 @@ func fetchGooglePublicKey() ([]GooglePublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	googlePublicKeysCache = googlePublicKeys.Keys
+	googlePublicKeysCacheTime = time.Now()
 
 	return googlePublicKeys.Keys, nil
 }
@@ -142,7 +153,7 @@ func AuthenticateHandler() gin.HandlerFunc {
 
 		// validate the claims
 		// aud, iss
-		if claims["aud"] != viper.GetString("OAUTH2.CLIENT_ID") || claims["iss"] != "https://accounts.google.com" {
+		if claims["aud"] != configs.AppConfig.OAuth2.ClientID || claims["iss"] != configs.AppConfig.OAuth2.Issuer {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			c.Abort()
 			return

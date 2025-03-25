@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
+	"eric-cw-hsu.github.io/configs"
 	"eric-cw-hsu.github.io/routes"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
-	"github.com/spf13/viper"
 )
 
 type App struct {
@@ -17,8 +17,8 @@ type App struct {
 func NewApp() *App {
 	app := &App{
 		redis: redis.NewClient(&redis.Options{
-			Addr: viper.GetString("REDIS.ADDR"),
-			DB:   viper.GetInt("REDIS.DB"),
+			Addr: configs.AppConfig.Redis.Addr,
+			DB:   configs.AppConfig.Redis.DB,
 		}),
 	}
 
