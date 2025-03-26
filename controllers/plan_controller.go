@@ -10,15 +10,18 @@ import (
 	"eric-cw-hsu.github.io/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/sirupsen/logrus"
 )
 
 type PlanController struct {
 	planRepository repositories.IPlanRepository
+	logger         *logrus.Logger
 }
 
-func NewPlanController(planRepository repositories.IPlanRepository) *PlanController {
+func NewPlanController(planRepository repositories.IPlanRepository, logger *logrus.Logger) *PlanController {
 	return &PlanController{
 		planRepository: planRepository,
+		logger:         logger,
 	}
 }
 
@@ -26,47 +29,49 @@ func (c *PlanController) CreatePlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var payload map[string]interface{}
 		if err := ctx.ShouldBindJSON(&payload); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid JSON",
-			})
+			c.logger.Error("Invalid JSON payload:", err)
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 			return
 		}
 
 		err := utils.ValidateJSONSchema(payload, models.GetPlanJsonSchema())
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-			})
+			c.logger.Error("JSON Schema validation error:", err)
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		key := payload["objectType"].(string) + ":" + payload["objectId"].(string)
 
-		// check if the key already exists
 		if _, err := c.planRepository.GetPlan(key); err != redis.Nil {
 			ctx.JSON(http.StatusConflict, gin.H{"error": "Key already exists"})
 			return
 		}
 
-		dataBytes, _ := json.Marshal(payload)
+		dataBytes, err := json.Marshal(payload)
+		if err != nil {
+			c.logger.Error("JSON Marshal error:", err)
+			ctx.Error(err)
+			return
+		}
 
 		if err := c.planRepository.StorePlan(key, dataBytes); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store data"})
+			c.logger.Error("StorePlan error:", err)
+			ctx.Error(err)
 			return
 		}
 
 		etag := fmt.Sprintf("%x", utils.GenerateETag(dataBytes))
 		ctx.Header("ETag", etag)
-		ctx.JSON(http.StatusCreated, gin.H{
-			"message": "Data stored successfully",
-		})
+		c.logger.Infof("Plan created: %s", key)
+		ctx.JSON(http.StatusCreated, gin.H{"message": "Data stored successfully"})
 	}
 }
 
 func (c *PlanController) GetPlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		key := "plan:" + ctx.Param("key")
-		if key == "" {
+		if key == "plan:" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Missing 'key' query parameter"})
 			return
 		}
@@ -76,7 +81,8 @@ func (c *PlanController) GetPlan() gin.HandlerFunc {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "Key not found"})
 			return
 		} else if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read data"})
+			c.logger.Error("GetPlan error:", err)
+			ctx.Error(err)
 			return
 		}
 
@@ -104,13 +110,19 @@ func (c *PlanController) DeletePlan() gin.HandlerFunc {
 		if _, err := c.planRepository.GetPlan(key); err == redis.Nil {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "Key not found"})
 			return
-		}
-
-		if err := c.planRepository.DeletePlan(key); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete data"})
+		} else if err != nil {
+			c.logger.Error("GetPlan error in DeletePlan:", err)
+			ctx.Error(err)
 			return
 		}
 
+		if err := c.planRepository.DeletePlan(key); err != nil {
+			c.logger.Error("DeletePlan error:", err)
+			ctx.Error(err)
+			return
+		}
+
+		c.logger.Infof("Plan deleted: %s", key)
 		ctx.Status(http.StatusNoContent)
 	}
 }
@@ -118,13 +130,14 @@ func (c *PlanController) DeletePlan() gin.HandlerFunc {
 func (c *PlanController) UpdatePlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		key := "plan:" + ctx.Param("key")
-		if key == "" {
+		if key == "plan:" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Missing 'key' query parameter"})
 			return
 		}
 
 		var payload map[string]interface{}
 		if err := ctx.ShouldBindJSON(&payload); err != nil {
+			c.logger.Error("Invalid JSON in UpdatePlan:", err)
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 			return
 		}
@@ -133,10 +146,13 @@ func (c *PlanController) UpdatePlan() gin.HandlerFunc {
 		if err == redis.Nil {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "Key not found"})
 			return
+		} else if err != nil {
+			c.logger.Error("GetPlan error in UpdatePlan:", err)
+			ctx.Error(err)
+			return
 		}
 
 		etag := fmt.Sprintf("%x", utils.GenerateETag([]byte(val)))
-
 		if ctx.GetHeader("If-None-Match") == "" {
 			ctx.JSON(http.StatusPreconditionRequired, gin.H{"error": "Missing 'If-None-Match' header"})
 			return
@@ -149,27 +165,35 @@ func (c *PlanController) UpdatePlan() gin.HandlerFunc {
 
 		existingData := make(map[string]interface{})
 		if err := json.Unmarshal([]byte(val), &existingData); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse existing data"})
+			c.logger.Error("Unmarshal error in UpdatePlan:", err)
+			ctx.Error(err)
 			return
 		}
 
-		// 合併數據：覆蓋頂層屬性，合併 linkedPlanServices
 		mergedData := mergePlans(existingData, payload)
 
-		// 驗證 JSON Schema
 		if err := utils.ValidateJSONSchema(mergedData, models.GetPlanJsonSchema()); err != nil {
+			c.logger.Error("JSON Schema validation error:", err)
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		dataBytes, _ := json.Marshal(mergedData)
+		dataBytes, err := json.Marshal(mergedData)
+		if err != nil {
+			c.logger.Error("JSON Marshal error in UpdatePlan:", err)
+			ctx.Error(err)
+			return
+		}
+
 		if err := c.planRepository.StorePlan(key, dataBytes); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update data"})
+			c.logger.Error("StorePlan error in UpdatePlan:", err)
+			ctx.Error(err)
 			return
 		}
 
 		etag = fmt.Sprintf("%x", utils.GenerateETag(dataBytes))
 		ctx.Header("ETag", etag)
+		c.logger.Infof("Plan updated: %s", key)
 		ctx.Data(http.StatusOK, "application/json", dataBytes)
 	}
 }

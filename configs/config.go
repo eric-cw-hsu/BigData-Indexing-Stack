@@ -4,12 +4,14 @@ import (
 	"errors"
 	"log"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Environment string       `mapstructure:"env"`
-	Port        int          `mapstructure:"port"`
+	Environment string `mapstructure:"env"`
+	Port        int    `mapstructure:"port"`
+	LogLevel    logrus.Level
 	Redis       RedisConfig  `mapstructure:"redis"`
 	OAuth2      OAuth2Config `mapstructure:"oauth2"`
 }
@@ -73,5 +75,20 @@ func SetupConfig() {
 
 	if err := AppConfig.Validate(); err != nil {
 		log.Fatalf("Invalid config, %s", err)
+	}
+
+	setLogLevel()
+}
+
+func setLogLevel() {
+	switch AppConfig.Environment {
+	case "development":
+		AppConfig.LogLevel = logrus.DebugLevel
+	case "production":
+		AppConfig.LogLevel = logrus.InfoLevel
+	case "testing":
+		AppConfig.LogLevel = logrus.ErrorLevel
+	default:
+		AppConfig.LogLevel = logrus.InfoLevel
 	}
 }

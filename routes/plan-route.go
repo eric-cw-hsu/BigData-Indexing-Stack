@@ -6,11 +6,12 @@ import (
 	"eric-cw-hsu.github.io/repositories"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/sirupsen/logrus"
 )
 
-func PlanRoute(router *gin.RouterGroup, redis *redis.Client) {
-	planRepository := repositories.NewPlanRepository(redis)
-	planController := controllers.NewPlanController(planRepository)
+func PlanRoute(router *gin.RouterGroup, redis *redis.Client, logger *logrus.Logger) {
+	planRepository := repositories.NewPlanRepository(redis, logger)
+	planController := controllers.NewPlanController(planRepository, logger)
 
 	planRouter := router.Group("/plan")
 	planRouter.Use(middlewares.AuthenticateHandler())
