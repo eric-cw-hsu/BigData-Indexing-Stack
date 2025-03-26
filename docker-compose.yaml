@@ -1,0 +1,54 @@
+networks:
+  info7255_bigindex:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+
+services:
+  elasticsearch:
+    image: elasticsearch:8.17.3
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      info7255_bigindex:
+        ipv4_address: 192.168.1.10
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    networks:
+      info7255_bigindex:
+        ipv4_address: 192.168.1.20
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:latest
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+    networks:
+      info7255_bigindex:
+        ipv4_address: 192.168.1.30
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  elastic_data:
+  redis_data:
+  rabbitmq_data:
