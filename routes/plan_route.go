@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"eric-cw-hsu.github.io/configs"
 	"eric-cw-hsu.github.io/controllers"
 	"eric-cw-hsu.github.io/middlewares"
+	"eric-cw-hsu.github.io/queue"
 	"eric-cw-hsu.github.io/repositories"
 	"eric-cw-hsu.github.io/services"
 	"github.com/gin-gonic/gin"
@@ -10,9 +12,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func PlanRoute(router *gin.RouterGroup, redis *redis.Client, logger *logrus.Logger) {
-	planRepository := repositories.NewPlanRepository(redis, logger)
-	planService := services.NewPlanService(planRepository, logger)
+func PlanRoute(router *gin.RouterGroup, redisClient *redis.Client, logger *logrus.Logger) {
+	rabbitQueue, err := queue.NewRabbitMQQueue(configs.AppConfig.RabbitMQ.Addr, "elastic", logger)
+	if err != nil {
+		logger.Error("Failed to initialize RabbitMQQueue, proceeding without queue: ", err)
+		rabbitQueue = nil
+	}
+
+	planRepository := repositories.NewPlanRepository(redisClient, logger)
+	planService := services.NewPlanService(planRepository, logger, rabbitQueue)
 	planController := controllers.NewPlanController(planService, logger)
 
 	planRouter := router.Group("/plan")

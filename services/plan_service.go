@@ -6,6 +6,7 @@ import (
 
 	"eric-cw-hsu.github.io/errors"
 	"eric-cw-hsu.github.io/models"
+	"eric-cw-hsu.github.io/queue"
 	"eric-cw-hsu.github.io/repositories"
 	"eric-cw-hsu.github.io/utils"
 	"github.com/go-redis/redis/v8"
@@ -15,12 +16,15 @@ import (
 type PlanService struct {
 	planRepository repositories.IPlanRepository
 	logger         *logrus.Logger
+	rabbitQueue    *queue.RabbitMQQueue
 }
 
-func NewPlanService(planRepository repositories.IPlanRepository, logger *logrus.Logger) *PlanService {
+// NewPlanService now accepts a RabbitMQQueue instance
+func NewPlanService(planRepository repositories.IPlanRepository, logger *logrus.Logger, rabbitQueue *queue.RabbitMQQueue) *PlanService {
 	return &PlanService{
 		planRepository: planRepository,
 		logger:         logger,
+		rabbitQueue:    rabbitQueue,
 	}
 }
 
@@ -32,7 +36,6 @@ func (s *PlanService) CreatePlan(payload map[string]interface{}) (string, string
 	}
 
 	key := payload["objectType"].(string) + ":" + payload["objectId"].(string)
-
 	if _, err := s.planRepository.GetPlan(key); err != redis.Nil {
 		return "", "", errors.ErrKeyAlreadyExists
 	}
@@ -49,6 +52,26 @@ func (s *PlanService) CreatePlan(payload map[string]interface{}) (string, string
 	}
 
 	etag := fmt.Sprintf("%x", utils.GenerateETag(dataBytes))
+
+	// Push creation event with the complete document to queue
+	if s.rabbitQueue != nil {
+		createEvent := map[string]interface{}{
+			"action": "create",
+			"key":    key,
+			"data":   dataBytes,
+		}
+		eventBytes, err := json.Marshal(createEvent)
+		if err != nil {
+			s.logger.Error("Failed to marshal create event:", err)
+		} else {
+			if pubErr := s.rabbitQueue.Publish(eventBytes); pubErr != nil {
+				s.logger.Error("Failed to publish create event:", pubErr)
+			}
+		}
+	} else {
+		s.logger.Warn("RabbitMQQueue not available, skipping event publishing for create action")
+	}
+
 	return key, etag, nil
 }
 
@@ -77,6 +100,24 @@ func (s *PlanService) DeletePlan(key string) error {
 	if err := s.planRepository.DeletePlan(key); err != nil {
 		s.logger.Error("DeletePlan error:", err)
 		return err
+	}
+
+	// Push deletion event to queue (key is sufficient)
+	if s.rabbitQueue != nil {
+		deleteEvent := map[string]interface{}{
+			"action": "delete",
+			"key":    key,
+		}
+		eventBytes, err := json.Marshal(deleteEvent)
+		if err != nil {
+			s.logger.Error("Failed to marshal delete event:", err)
+		} else {
+			if pubErr := s.rabbitQueue.Publish(eventBytes); pubErr != nil {
+				s.logger.Error("Failed to publish delete event:", pubErr)
+			}
+		}
+	} else {
+		s.logger.Warn("RabbitMQQueue not available, skipping event publishing for delete action")
 	}
 
 	return nil
@@ -116,6 +157,26 @@ func (s *PlanService) UpdatePlan(key string, payload map[string]interface{}) (st
 	}
 
 	etag := fmt.Sprintf("%x", utils.GenerateETag(dataBytes))
+
+	// Push update event with the complete updated document to queue
+	if s.rabbitQueue != nil {
+		updateEvent := map[string]interface{}{
+			"action": "update",
+			"key":    key,
+			"data":   dataBytes,
+		}
+		eventBytes, err := json.Marshal(updateEvent)
+		if err != nil {
+			s.logger.Error("Failed to marshal update event:", err)
+		} else {
+			if pubErr := s.rabbitQueue.Publish(eventBytes); pubErr != nil {
+				s.logger.Error("Failed to publish update event:", pubErr)
+			}
+		}
+	} else {
+		s.logger.Warn("RabbitMQQueue not available, skipping event publishing for update action")
+	}
+
 	return string(dataBytes), etag, nil
 }
 
@@ -124,7 +185,6 @@ func mergePlans(existing, newPlan map[string]interface{}) map[string]interface{}
 	for k, v := range existing {
 		merged[k] = v
 	}
-
 	for k, v := range newPlan {
 		if k == "linkedPlanServices" {
 			merged[k] = mergeLinkedPlanServices(existing[k], v)
@@ -132,7 +192,6 @@ func mergePlans(existing, newPlan map[string]interface{}) map[string]interface{}
 			merged[k] = v
 		}
 	}
-
 	return merged
 }
 
@@ -154,7 +213,6 @@ func mergeLinkedPlanServices(existing, newData interface{}) []map[string]interfa
 			}
 		}
 	}
-
 	for _, item := range newList {
 		if obj, ok := item.(map[string]interface{}); ok {
 			if id, exists := obj["objectId"].(string); exists {
@@ -162,11 +220,9 @@ func mergeLinkedPlanServices(existing, newData interface{}) []map[string]interfa
 			}
 		}
 	}
-
 	mergedList := []map[string]interface{}{}
 	for _, obj := range existingMap {
 		mergedList = append(mergedList, obj)
 	}
-
 	return mergedList
 }

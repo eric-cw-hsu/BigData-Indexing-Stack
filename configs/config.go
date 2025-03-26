@@ -12,8 +12,9 @@ type Config struct {
 	Environment string `mapstructure:"env"`
 	Port        int    `mapstructure:"port"`
 	LogLevel    logrus.Level
-	Redis       RedisConfig  `mapstructure:"redis"`
-	OAuth2      OAuth2Config `mapstructure:"oauth2"`
+	Redis       RedisConfig    `mapstructure:"redis"`
+	OAuth2      OAuth2Config   `mapstructure:"oauth2"`
+	RabbitMQ    RabbitMQConfig `mapstructure:"rabbitmq"`
 }
 
 type RedisConfig struct {
@@ -29,6 +30,10 @@ func setRedisDefaultConfig() {
 type OAuth2Config struct {
 	ClientID string `mapstructure:"client_id"`
 	Issuer   string `mapstructure:"issuer"`
+}
+
+type RabbitMQConfig struct {
+	Addr string `mapstructure:"addr"`
 }
 
 func (c *Config) Validate() error {
@@ -50,6 +55,10 @@ func (c *Config) Validate() error {
 
 	if c.OAuth2.Issuer == "" {
 		return errors.New("oauth2 issuer must be set")
+	}
+
+	if c.RabbitMQ.Addr == "" {
+		return errors.New("rabbitmq addr must be set")
 	}
 
 	return nil
