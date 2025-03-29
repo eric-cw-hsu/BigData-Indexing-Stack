@@ -58,7 +58,7 @@ func (s *PlanService) CreatePlan(payload map[string]interface{}) (string, string
 		createEvent := map[string]interface{}{
 			"action": "create",
 			"key":    key,
-			"data":   dataBytes,
+			"data":   payload,
 		}
 		eventBytes, err := json.Marshal(createEvent)
 		if err != nil {
@@ -163,7 +163,7 @@ func (s *PlanService) UpdatePlan(key string, payload map[string]interface{}) (st
 		updateEvent := map[string]interface{}{
 			"action": "update",
 			"key":    key,
-			"data":   dataBytes,
+			"data":   mergedData,
 		}
 		eventBytes, err := json.Marshal(updateEvent)
 		if err != nil {
