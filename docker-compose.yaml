@@ -12,6 +12,7 @@ services:
     environment:
       - discovery.type=single-node
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enrollment.enabled=true
     networks:
       info7255_bigindex:
         ipv4_address: 192.168.1.10
@@ -34,7 +35,7 @@ services:
       - redis_data:/data
 
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:3.13.7-management
     container_name: rabbitmq
     environment:
       - RABBITMQ_DEFAULT_USER=admin
@@ -48,7 +49,25 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.4
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - "ELASTICSEARCH_USERNAME=${KIBANA_USERNAME}"
+      - "ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}"
+    networks:
+      info7255_bigindex:
+        ipv4_address: 192.168.1.40
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    volumes:
+      - kibana_data:/data
+
 volumes:
   elastic_data:
   redis_data:
   rabbitmq_data:
+  kibana_data:

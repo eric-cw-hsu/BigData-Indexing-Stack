@@ -35,7 +35,7 @@ func (s *PlanService) CreatePlan(payload map[string]interface{}) (string, string
 		return "", "", err
 	}
 
-	key := payload["objectType"].(string) + ":" + payload["objectId"].(string)
+	key := payload["objectId"].(string)
 	if _, err := s.planRepository.GetPlan(key); err != redis.Nil {
 		return "", "", errors.ErrKeyAlreadyExists
 	}
@@ -57,7 +57,8 @@ func (s *PlanService) CreatePlan(payload map[string]interface{}) (string, string
 	if s.rabbitQueue != nil {
 		createEvent := map[string]interface{}{
 			"action": "create",
-			"key":    key,
+			"index":  "plans",
+			"key":    payload["objectId"].(string),
 			"data":   payload,
 		}
 		eventBytes, err := json.Marshal(createEvent)
@@ -90,7 +91,8 @@ func (s *PlanService) GetPlan(key string) (string, string, error) {
 }
 
 func (s *PlanService) DeletePlan(key string) error {
-	if _, err := s.planRepository.GetPlan(key); err == redis.Nil {
+	val, err := s.planRepository.GetPlan(key)
+	if err == redis.Nil {
 		return errors.ErrKeyNotFound
 	} else if err != nil {
 		s.logger.Error("GetPlan error in DeletePlan:", err)
@@ -103,10 +105,19 @@ func (s *PlanService) DeletePlan(key string) error {
 	}
 
 	// Push deletion event to queue (key is sufficient)
+	dataBytes := []byte(val)
+	var payload map[string]interface{}
+	err = json.Unmarshal(dataBytes, &payload)
+	if err != nil {
+		s.logger.Error("Unmarshal error in DeletePlan:", err)
+	}
+
 	if s.rabbitQueue != nil {
 		deleteEvent := map[string]interface{}{
 			"action": "delete",
+			"index":  "plans",
 			"key":    key,
+			"data":   payload,
 		}
 		eventBytes, err := json.Marshal(deleteEvent)
 		if err != nil {
@@ -138,7 +149,17 @@ func (s *PlanService) UpdatePlan(key string, payload map[string]interface{}) (st
 		return "", "", err
 	}
 
+	jsonBytes, _ := json.MarshalIndent(existingData, "", "  ")
+	fmt.Println("Existing Data:", string(jsonBytes))
+
+	jsonBytes, _ = json.MarshalIndent(payload, "", "  ")
+	fmt.Println("Payload Data:", string(jsonBytes))
+
 	mergedData := mergePlans(existingData, payload)
+
+	jsonBytes, _ = json.MarshalIndent(mergedData, "", "  ")
+	fmt.Println("Merged Data:", string(jsonBytes))
+	// return "", "", nil
 
 	if err := utils.ValidateJSONSchema(mergedData, models.GetPlanJsonSchema()); err != nil {
 		s.logger.Error("JSON Schema validation error:", err)
@@ -162,7 +183,8 @@ func (s *PlanService) UpdatePlan(key string, payload map[string]interface{}) (st
 	if s.rabbitQueue != nil {
 		updateEvent := map[string]interface{}{
 			"action": "update",
-			"key":    key,
+			"index":  "plans",
+			"key":    mergedData["objectId"].(string),
 			"data":   mergedData,
 		}
 		eventBytes, err := json.Marshal(updateEvent)

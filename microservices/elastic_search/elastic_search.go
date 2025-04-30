@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,12 +31,26 @@ func NewElasticSearchService(logger *logrus.Logger) *ElasticSearchService {
 	}
 }
 
-func (s *ElasticSearchService) IndexToElastic(index string, id string, data []byte) {
-	res, err := s.client.Index(
-		index,
-		bytes.NewReader(data),
-		s.client.Index.WithDocumentID(id),
-	)
+func (s *ElasticSearchService) IndexToElastic(index string, id string, data []byte, routing string) {
+
+	var res *esapi.Response
+	var err error
+
+	if routing == "" {
+		res, err = s.client.Index(
+			index,
+			bytes.NewReader(data),
+			s.client.Index.WithDocumentID(id),
+		)
+	} else {
+		res, err = s.client.Index(
+			index,
+			bytes.NewReader(data),
+			s.client.Index.WithDocumentID(id),
+			s.client.Index.WithRouting(routing),
+		)
+	}
+
 	if err != nil {
 		s.logger.Error("Failed to index data to ElasticSearch: ", err)
 		return

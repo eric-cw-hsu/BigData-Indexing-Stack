@@ -47,8 +47,8 @@ func (c *PlanController) CreatePlan() gin.HandlerFunc {
 
 func (c *PlanController) GetPlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		key := "plan:" + ctx.Param("key")
-		if key == "plan:" {
+		key := ctx.Param("key")
+		if key == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrMissingKeyQueryParam.Error()})
 			return
 		}
@@ -75,7 +75,7 @@ func (c *PlanController) GetPlan() gin.HandlerFunc {
 
 func (c *PlanController) DeletePlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		key := "plan:" + ctx.Param("key")
+		key := ctx.Param("key")
 		if key == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrMissingKeyQueryParam.Error()})
 			return
@@ -96,8 +96,8 @@ func (c *PlanController) DeletePlan() gin.HandlerFunc {
 
 func (c *PlanController) UpdatePlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		key := "plan:" + ctx.Param("key")
-		if key == "plan:" {
+		key := ctx.Param("key")
+		if key == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrMissingKeyQueryParam.Error()})
 			return
 		}

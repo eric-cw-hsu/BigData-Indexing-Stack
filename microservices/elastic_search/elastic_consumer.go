@@ -58,28 +58,33 @@ func (ec *ElasticConsumer) StartConsuming(ctx context.Context) error {
 					continue
 				}
 
-				if action, ok := event["action"].(string); ok {
-					switch action {
-					case "create", "update":
-
-						if data, ok := event["data"].(map[string]interface{}); ok {
-							dataBytes, _ := json.Marshal(data)
-							ec.elasticService.IndexToElastic("plan_index", event["key"].(string), dataBytes)
-						} else {
-							ec.logger.Error("Event missing data field")
-						}
-					case "delete":
-						if key, ok := event["key"].(string); ok {
-							ec.elasticService.DeleteFromElastic("plan_index", key)
-						} else {
-							ec.logger.Error("Delete event missing key field")
-						}
-					default:
-						ec.logger.Warn("Unknown event action: ", action)
-					}
-				} else {
+				action, ok := event["action"].(string)
+				if !ok {
 					ec.logger.Error("Event missing action field")
+					continue
 				}
+
+				data, ok := event["data"].(map[string]interface{})
+				if !ok {
+					ec.logger.Error("Event missing data field")
+					continue
+				}
+
+				for _, value := range ec.splitParentChildren("plan", "", data) {
+					parent := ""
+					if value["join_field"].(map[string]interface{})["parent"] != nil {
+						parent = value["join_field"].(map[string]interface{})["parent"].(string)
+					}
+
+					dataBytes, _ := json.Marshal(value)
+
+					if action == "delete" {
+						ec.elasticService.DeleteFromElastic(event["index"].(string), value["objectId"].(string))
+					} else {
+						ec.elasticService.IndexToElastic(event["index"].(string), value["objectId"].(string), dataBytes, parent)
+					}
+				}
+
 			case <-ctx.Done():
 				ec.logger.Info("ElasticConsumer context cancelled")
 				return
@@ -88,4 +93,48 @@ func (ec *ElasticConsumer) StartConsuming(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func (ec *ElasticConsumer) splitParentChildren(name, parent string, data map[string]interface{}) []map[string]interface{} {
+	var result []map[string]interface{}
+	id := data["objectId"].(string)
+
+	joinField := map[string]interface{}{
+		"name": name,
+	}
+	if parent != "" {
+		joinField["parent"] = parent
+	}
+
+	current := map[string]interface{}{
+		"join_field": joinField,
+	}
+
+	for key, value := range data {
+		if value, ok := value.(map[string]interface{}); ok {
+			result = append(
+				result,
+				ec.splitParentChildren(key, id, value)...,
+			)
+			continue
+		}
+
+		if value, ok := value.([]interface{}); ok {
+			for _, v := range value {
+				if v, ok := v.(map[string]interface{}); ok {
+					result = append(
+						result,
+						ec.splitParentChildren(key, id, v)...,
+					)
+				}
+			}
+			continue
+		}
+
+		current[key] = value
+	}
+
+	result = append(result, current)
+
+	return result
 }

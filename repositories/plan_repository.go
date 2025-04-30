@@ -26,7 +26,7 @@ func NewPlanRepository(redis *redis.Client, logger *logrus.Logger) *PlanReposito
 }
 
 func (r *PlanRepository) StorePlan(key string, value []byte) error {
-	err := r.redis.Set(context.Background(), key, value, 0).Err()
+	err := r.redis.Set(context.Background(), "plans:"+key, value, 0).Err()
 	if err != nil {
 		r.logger.WithField("key", key).Error("Failed to store plan:", err)
 		return err
@@ -36,7 +36,7 @@ func (r *PlanRepository) StorePlan(key string, value []byte) error {
 }
 
 func (r *PlanRepository) GetPlan(key string) (string, error) {
-	result, err := r.redis.Get(context.Background(), key).Result()
+	result, err := r.redis.Get(context.Background(), "plans:"+key).Result()
 	if err != nil {
 		r.logger.WithField("key", key).Error("Failed to get plan:", err)
 		return "", err
@@ -46,7 +46,7 @@ func (r *PlanRepository) GetPlan(key string) (string, error) {
 }
 
 func (r *PlanRepository) DeletePlan(key string) error {
-	err := r.redis.Del(context.Background(), key).Err()
+	err := r.redis.Del(context.Background(), "plans:"+key).Err()
 	if err != nil {
 		r.logger.WithField("key", key).Error("Failed to delete plan:", err)
 		return err
