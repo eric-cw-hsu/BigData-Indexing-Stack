@@ -2,89 +2,94 @@
 
 ## Overview
 
-This project combines several components to build a robust application with the following key features:
-- **Web API:** A RESTful service built with Gin that handles CRUD operations for plans.
-- **Data Storage:** Uses Redis as a NoSQL database.
-- **Message Queue:** Utilizes RabbitMQ to publish asynchronous events during plan creation, update, and deletion.
-- **Search Indexing:** Integrates with Elasticsearch for indexing and searching plan data.
-- **Microservices:** A dedicated microservice, the Elastic Consumer, consumes RabbitMQ messages and updates Elasticsearch accordingly.
+This project is organized as two Go microservices:
+
+- **API Service (`cmd/api-service`)**  
+  A RESTful web service built with Gin that handles CRUD operations for “plans”.  
+  • Data Storage: MongoDB  
+  • Message Queue: RabbitMQ  
+  • Auth: Google OAuth middleware  
+- **Elasticsearch Service (`cmd/elasticsearch-service`)**  
+  A background consumer that listens to plan events on RabbitMQ and updates Elasticsearch.  
+  • Health-check endpoint at `/health` 
 
 ## Project Structure
 ```
-├── config.yaml # Application configuration file
-├── README.md # This file 
-├── configs/ # Configuration package (SetupConfig, etc.) 
-├── controllers/ # HTTP controllers (e.g., PlanController) 
-├── middlewares/ # Middleware for logging and error handling 
-├── microservices/ # Independent microservices (e.g., Elastic Consumer) 
-├── repositories/ # Data repository implementations (Redis) 
-├── routes/ # HTTP route definitions 
-├── services/ # Business logic and external service integrations (Plan, ElasticSearch) 
-├── utils/
-└── queue/ # RabbitMQ integration package
+├── cmd/
+│ ├── api-service/ # REST API microservice
+│ │ └── main.go
+│ └── elasticsearch-service/ # Elasticsearch consumer microservice
+│ └── main.go
+└── internal/
+  ├── api/
+  │ ├── config/ # service‐specific config structs
+  │ ├── handlers/ # HTTP handlers (plan_handler.go, …)
+  │ ├── repositories/ # data access (plan_repository.go)
+  │ ├── services/ # business logic (plan_service.go)
+  │ ├── routes/ # router setup (router.go)
+  │ ├── schema/ # JSON Schema files & loader
+  │ └── utils/ # shared error types, ETag, etc.
+  ├── elasticsearch/
+  │ ├── client.go # ES client wrapper
+  │ ├── processor.go # message → index/delete logic
+  │ ├── service.go # Start() orchestration
+  │ └── mappings/ # index mappings JSON
+  └── objectstore/ # graph node extraction & Mongo storage
+    ├── extractor.go
+    ├── repository.go
+    ├── retriever.go
+    └── merger.go
 ```
-
-## Key Components
-
-- **Web API**
-  - Implements CRUD operations for "plans".
-  - Uses Gin for routing and integrates with Redis to store plan data.
-  - Publishes events to a RabbitMQ queue for asynchronous processing.
-
-- **RabbitMQ Integration**
-  - The `queue` package provides a `RabbitMQQueue` which handles connection, channel, and queue declaration.
-  - The PlanService uses this module to publish create, update, and delete events.
-
-- **Elasticsearch Integration**
-  - The `services/elastic_search.go` package encapsulates integration with Elasticsearch for indexing and deletion operations.
-  - This service is leveraged by the dedicated microservice to update search indexes.
-
-- **Elastic Consumer Microservice**
-  - Located under `/microservices/elastic_search`, it consumes messages from RabbitMQ and updates Elasticsearch accordingly.
-  - Exposes a simple HTTP endpoint (e.g., `/health`) for health checks.
 
 ## Configuration
 
-The project uses a YAML configuration file (`config.yaml`) in the project root. A sample configuration is shown below:
+Place your YAML files under `config/` in project root:
 
+### config/api-service.yaml
 ```yaml
-ENV: ""
-PORT: 
-REDIS:
-  ADDR: ""
-  DB: 
-OAUTH2:
-  ISSUER: "https://accounts.google.com"
-  CLIENT_ID: ""
-RABBITMQ:
-  ADDR: ""
-ELASTICSEARCH:
-  ADDR: ""
-  USERNAME: ""
-  PASSWORD: ""
-  HEALTH_CHECKER_PORT: ""
+server:
+  port: 8080
+mongo:
+  uri: "mongodb://localhost:27017"
+  database: "plans_db"
+rabbitmq:
+  uri: "amqp://guest:guest@localhost:5672/"
+  queue: "plans"
+oauth:
+  google_client_id: "<your-google-client-id>"
 ```
 
-## Running the Application
-Web API
-1. Ensure Redis, RabbitMQ, and Elasticsearch services are running.
-2. Build and run the web application:
-```bash
-$ go run main.go
+### config/elasticsearch-service.yaml
+```yaml
+elastic_search:
+  addr: "http://localhost:9200"
+  username: ""
+  password: ""
+  index: "plans"
+  health_checker_port: "8081"
+rabbitmq:
+  uri: "amqp://guest:guest@localhost:5672/"
+  queue: "plans"
 ```
-3. The HTTP API will run on the port specified in the configuration (e.g., 8080).
-   
-Elastic Consumer Microservice
-1. Navigate to the microservices directory:
-   ```
-   cd microservices/elastic_search
-   ```
-2. Build and run the microservice:
-   ```
-   $ go run main.go
-   ```
-3. The microservice provides a health check endpoint at `/health` (default port e.g., 8081).
 
-## Logging and Error Handling
-- Logging: The application uses Logrus for structured logging.
-- Error Handling: Critical configuration and dependency errors cause the application to exit. Background workers log errors without impacting primary APIs.
+## Running the Services
+
+### API Service
+
+1. Ensure MongoDB and RabbitMQ are running.  
+2. From project root, run:
+   ```bash
+   go run cmd/api-service/main.go \
+     --config config/api-service.yaml
+   ```
+3. The API listens on the port defined under `server.port`.
+
+### Elasticsearch Service
+
+1. Ensure RabbitMQ and Elasticsearch are running.  
+2. From project root, run:
+   ```bash
+   go run cmd/elasticsearch-service/main.go \
+     --config config/elasticsearch-service.yaml
+   ```
+3. Health-check is served on the port in `elastic_search.health_checker_port`.
