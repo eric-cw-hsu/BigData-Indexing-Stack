@@ -23,6 +23,9 @@ type Config struct {
 		URI   string
 		Queue string
 	}
+	Redis struct {
+		URI string
+	}
 }
 
 func Load() *Config {

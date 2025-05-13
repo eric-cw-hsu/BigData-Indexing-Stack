@@ -36,7 +36,7 @@ func (h *PlanHandler) StorePlanHandler(c *gin.Context) {
 	}
 
 	// create etag for the plan
-	etag := utils.GenerateETag([]byte(fmt.Sprintf("%v", plan)))
+	etag, err := h.planService.GenerateETag(c, plan)
 	c.Header("ETag", etag)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plan stored successfully"})
@@ -45,20 +45,22 @@ func (h *PlanHandler) StorePlanHandler(c *gin.Context) {
 func (h *PlanHandler) GetPlanHandler(c *gin.Context) {
 	planId := c.Param("id")
 
+	if h.planService.CheckETag(c, planId, c.GetHeader("If-None-Match")) == nil {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
 	plan, err := h.planService.Get(c, planId)
 	if err != nil {
 		c.JSON(http.StatusNotFound, utils.NewPlanNotFoundError(fmt.Errorf("Plan with ID %s not found", planId)))
 		return
 	}
 
-	// Check if the ETag matches
-	if c.GetHeader("If-None-Match") == utils.GenerateETag([]byte(fmt.Sprintf("%v", plan))) {
-		c.Status(http.StatusNotModified)
-		return
-	}
-
 	// Generate a new ETag for the response
-	etag := utils.GenerateETag([]byte(fmt.Sprintf("%v", plan)))
+	etag, err := h.planService.GetETag(c, planId)
+	if err != nil {
+		c.JSON(err.StatusCode, err)
+	}
 	c.Header("ETag", etag)
 	c.JSON(http.StatusOK, plan)
 }
@@ -69,6 +71,11 @@ func (h *PlanHandler) DeletePlanHandler(c *gin.Context) {
 	if err := h.planService.Delete(c, planId); err != nil {
 		c.JSON(err.StatusCode, err)
 		return
+	}
+
+	// delete the plan from Redis
+	if err := h.planService.DeleteETag(c, planId); err != nil {
+		c.JSON(err.StatusCode, err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plan deleted successfully"})
@@ -93,13 +100,23 @@ func (h *PlanHandler) UpdatePlanHandler(c *gin.Context) {
 		return
 	}
 
-	plan, err := h.planService.Update(c, planId, planUpdatePayload, c.GetHeader("If-Match"))
+	if err := h.planService.CheckETag(c, planId, c.GetHeader("If-Match")); err != nil {
+		c.JSON(http.StatusPreconditionFailed, utils.NewETagNotMatchError())
+		return
+	}
+
+	plan, err := h.planService.Update(c, planId, planUpdatePayload)
 	if err != nil {
 		c.JSON(err.StatusCode, err)
 		return
 	}
 
-	etag := utils.GenerateETag([]byte(fmt.Sprintf("%v", plan)))
+	etag, err := h.planService.GenerateETag(c, plan)
+	if err != nil {
+		c.JSON(err.StatusCode, err)
+		return
+	}
+
 	c.Header("ETag", etag)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Plan updated successfully",

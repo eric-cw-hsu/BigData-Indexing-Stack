@@ -8,12 +8,13 @@ import (
 	"eric-cw-hsu.github.io/internal/oauth"
 	"eric-cw-hsu.github.io/internal/rabbitmq"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func NewRouter(collection *mongo.Collection, publisher *rabbitmq.Publisher, config *config.Config) *gin.Engine {
+func NewRouter(collection *mongo.Collection, publisher *rabbitmq.Publisher, redisClient *redis.Client, config *config.Config) *gin.Engine {
 	planRepository := repositories.NewPlanRepository(collection)
-	planService := services.NewPlanService(publisher, planRepository)
+	planService := services.NewPlanService(publisher, planRepository, redisClient)
 	planHandler := handlers.NewPlanHandler(planRepository, planService)
 
 	router := gin.Default()

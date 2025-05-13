@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"eric-cw-hsu.github.io/internal/api/repositories"
@@ -10,17 +9,20 @@ import (
 	"eric-cw-hsu.github.io/internal/api/utils"
 	"eric-cw-hsu.github.io/internal/objectstore/graph"
 	"eric-cw-hsu.github.io/internal/rabbitmq"
+	"github.com/go-redis/redis/v8"
 )
 
 type PlanService struct {
 	publisher      *rabbitmq.Publisher
 	planRepository *repositories.PlanRepository
+	redisClient    *redis.Client
 }
 
-func NewPlanService(publisher *rabbitmq.Publisher, planRepository *repositories.PlanRepository) *PlanService {
+func NewPlanService(publisher *rabbitmq.Publisher, planRepository *repositories.PlanRepository, redisClient *redis.Client) *PlanService {
 	return &PlanService{
 		publisher:      publisher,
 		planRepository: planRepository,
+		redisClient:    redisClient,
 	}
 }
 
@@ -81,10 +83,9 @@ func (s *PlanService) Update(
 	ctx context.Context,
 	id string,
 	payload map[string]interface{},
-	ifMatch string,
 ) (map[string]interface{}, *utils.AppError) {
 	if !s.planRepository.IsPlanExists(id) {
-		return nil, utils.NewPlanNotFoundError(nil)
+		return nil, utils.NewPlanNotFoundError(fmt.Errorf("Plan with ID %s not found", id))
 	}
 
 	plan, err := s.planRepository.GetPlan(id)
@@ -92,23 +93,10 @@ func (s *PlanService) Update(
 		return nil, utils.NewStorageError("Failed to get plan", err)
 	}
 
-	if utils.GenerateETag([]byte(fmt.Sprintf("%v", plan))) != ifMatch {
-		return nil, utils.NewETagNotMatchError()
-	}
-
 	mergedPayload, toDeleteObjects, err := graph.Merge(plan, payload)
 	if err != nil {
 		return nil, utils.NewJSONMergeError(err)
 	}
-
-	ori, _ := json.MarshalIndent(plan, "", "  ")
-	fmt.Println("Original Payload:", string(ori))
-
-	upd, _ := json.MarshalIndent(payload, "", "  ")
-	fmt.Println("Update Payload:", string(upd))
-
-	str, _ := json.MarshalIndent(mergedPayload, "", "  ")
-	fmt.Println("Merged Payload:", string(str))
 
 	if err := schema.ValidateJsonSchema(mergedPayload, schema.GetPlanJsonSchema()); err != nil {
 		return nil, utils.NewInvalidJSONError(err)
@@ -138,7 +126,7 @@ func (s *PlanService) Update(
 func (s *PlanService) Delete(ctx context.Context, id string) *utils.AppError {
 	// check if the plan exists
 	if !s.planRepository.IsPlanExists(id) {
-		return utils.NewPlanNotFoundError(nil)
+		return utils.NewPlanNotFoundError(fmt.Errorf("Plan with ID %s not found", id))
 	}
 
 	// delete the plan
@@ -149,6 +137,54 @@ func (s *PlanService) Delete(ctx context.Context, id string) *utils.AppError {
 
 	if err := s.publishNodes(nodes, "delete"); err != nil {
 		return utils.NewRabbitMQFailPublishError(err)
+	}
+
+	// delete the plan from Redis
+	if err := s.redisClient.Del(ctx, id).Err(); err != nil {
+		return utils.NewStorageError("Failed to delete plan from Redis", err)
+	}
+
+	return nil
+}
+
+func (s *PlanService) GenerateETag(ctx context.Context, plan map[string]interface{}) (string, *utils.AppError) {
+	etag := utils.GenerateETag([]byte(fmt.Sprintf("%v", plan)))
+	if err := s.redisClient.Set(ctx, plan["objectId"].(string), etag, 0).Err(); err != nil {
+		return "", utils.NewRedisError("Failed to set ETag in Redis", err)
+	}
+
+	return etag, nil
+}
+
+func (s *PlanService) GetETag(ctx context.Context, id string) (string, *utils.AppError) {
+	etag, err := s.redisClient.Get(ctx, id).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", utils.NewPlanNotFoundError(nil)
+		}
+
+		return "", utils.NewRedisError("Failed to get ETag from Redis", err)
+	}
+
+	return etag, nil
+}
+
+func (s *PlanService) CheckETag(ctx context.Context, id string, ifMatch string) *utils.AppError {
+	etag, err := s.GetETag(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if etag != ifMatch {
+		return utils.NewETagNotMatchError()
+	}
+	return nil
+}
+
+func (s *PlanService) DeleteETag(ctx context.Context, id string) *utils.AppError {
+	err := s.redisClient.Del(ctx, id).Err()
+	if err != nil {
+		return utils.NewRedisError("Failed to delete ETag from Redis", err)
 	}
 
 	return nil

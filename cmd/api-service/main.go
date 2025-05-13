@@ -27,6 +27,10 @@ func main() {
 	}
 	defer mq.Close()
 
-	router := routes.NewRouter(planCollection, mq, cfg)
+	redisService := database.NewRedisService(cfg.Redis.URI)
+	defer redisService.Close()
+	redisClient := redisService.GetClient()
+
+	router := routes.NewRouter(planCollection, mq, redisClient, cfg)
 	router.Run(":" + cfg.Server.Port)
 }

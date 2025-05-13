@@ -78,3 +78,12 @@ func NewJSONMergeError(err error) *AppError {
 		Details:    err.Error(),
 	}
 }
+
+func NewRedisError(message string, err error) *AppError {
+	return &AppError{
+		Code:       "REDIS_ERROR",
+		StatusCode: 500,
+		Message:    "Redis error",
+		Details:    err.Error(),
+	}
+}
