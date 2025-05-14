@@ -27,6 +27,7 @@ func Load() Config {
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 	viper.AddConfigPath(path.Join(dir, "cmd/elasticsearch-service"))
 	viper.AddConfigPath("config/")
 

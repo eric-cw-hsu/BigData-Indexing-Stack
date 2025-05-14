@@ -60,6 +60,7 @@ func (h *PlanHandler) GetPlanHandler(c *gin.Context) {
 	etag, err := h.planService.GetETag(c, planId)
 	if err != nil {
 		c.JSON(err.StatusCode, err)
+		return
 	}
 	c.Header("ETag", etag)
 	c.JSON(http.StatusOK, plan)
@@ -76,6 +77,7 @@ func (h *PlanHandler) DeletePlanHandler(c *gin.Context) {
 	// delete the plan from Redis
 	if err := h.planService.DeleteETag(c, planId); err != nil {
 		c.JSON(err.StatusCode, err)
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plan deleted successfully"})

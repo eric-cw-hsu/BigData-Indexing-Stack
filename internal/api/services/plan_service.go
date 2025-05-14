@@ -160,7 +160,7 @@ func (s *PlanService) GetETag(ctx context.Context, id string) (string, *utils.Ap
 	etag, err := s.redisClient.Get(ctx, id).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return "", utils.NewPlanNotFoundError(nil)
+			return "", utils.NewPlanNotFoundError(fmt.Errorf("ETag not found for plan with ID %s", id))
 		}
 
 		return "", utils.NewRedisError("Failed to get ETag from Redis", err)
