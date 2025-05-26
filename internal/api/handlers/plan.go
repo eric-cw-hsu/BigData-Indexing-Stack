@@ -6,7 +6,7 @@ import (
 
 	"eric-cw-hsu.github.io/internal/api/repositories"
 	"eric-cw-hsu.github.io/internal/api/services"
-	"eric-cw-hsu.github.io/internal/api/utils"
+	"eric-cw-hsu.github.io/internal/shared/apperror"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,7 +25,7 @@ func NewPlanHandler(planRepository *repositories.PlanRepository, planService *se
 func (h *PlanHandler) StorePlanHandler(c *gin.Context) {
 	var planPayload map[string]interface{}
 	if err := c.ShouldBindJSON(&planPayload); err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewInvalidJSONError(err))
+		c.JSON(http.StatusBadRequest, apperror.NewInvalidJSONError(err))
 		return
 	}
 
@@ -37,6 +37,10 @@ func (h *PlanHandler) StorePlanHandler(c *gin.Context) {
 
 	// create etag for the plan
 	etag, err := h.planService.GenerateETag(c, plan)
+	if err != nil {
+		c.JSON(err.StatusCode, err)
+		return
+	}
 	c.Header("ETag", etag)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plan stored successfully"})
@@ -52,7 +56,7 @@ func (h *PlanHandler) GetPlanHandler(c *gin.Context) {
 
 	plan, err := h.planService.Get(c, planId)
 	if err != nil {
-		c.JSON(http.StatusNotFound, utils.NewPlanNotFoundError(fmt.Errorf("Plan with ID %s not found", planId)))
+		c.JSON(http.StatusNotFound, apperror.NewPlanNotFoundError(fmt.Errorf("Plan with ID %s not found", planId)))
 		return
 	}
 
@@ -93,17 +97,16 @@ func (h *PlanHandler) UpdatePlanHandler(c *gin.Context) {
 	var planUpdatePayload map[string]interface{}
 
 	if err := c.ShouldBindBodyWithJSON(&planUpdatePayload); err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewInvalidJSONError(err))
 		return
 	}
 
 	if c.GetHeader("If-Match") == "" {
-		c.JSON(http.StatusPreconditionRequired, utils.NewETagRequiredError())
+		c.JSON(http.StatusPreconditionRequired, apperror.NewETagRequiredError())
 		return
 	}
 
 	if err := h.planService.CheckETag(c, planId, c.GetHeader("If-Match")); err != nil {
-		c.JSON(http.StatusPreconditionFailed, utils.NewETagNotMatchError())
+		c.JSON(http.StatusPreconditionFailed, apperror.NewETagNotMatchError())
 		return
 	}
 

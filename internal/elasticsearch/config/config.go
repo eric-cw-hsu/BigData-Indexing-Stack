@@ -10,8 +10,9 @@ import (
 
 type Config struct {
 	RabbitMQ struct {
-		URI   string
-		Queue string
+		URI      string
+		Queue    string
+		Exchange string
 	}
 	ElasticSearch struct {
 		Addr              string

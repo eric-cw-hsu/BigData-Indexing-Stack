@@ -3,29 +3,44 @@ package elasticsearch
 import (
 	"encoding/json"
 	"log"
-	"strings"
 
 	"eric-cw-hsu.github.io/internal/rabbitmq/types"
+	"eric-cw-hsu.github.io/internal/shared/messagequeue"
 )
 
-func ProcessRabbitMQPlanMessage(client *Client, body []byte) {
+func ParseRabbitMQPlanMessage(body json.RawMessage) (types.PlanMessage, error) {
 	var msg types.PlanMessage
 	if err := json.Unmarshal(body, &msg); err != nil {
-		log.Printf("Invalid message format: %v", err)
-		return
+		return msg, err
 	}
+	return msg, nil
+}
 
-	parentId, ok := msg.Data["parentId"].(string)
-	if !ok {
-		parentId = ""
+func ProcessCreatePlanNode(client *Client) messagequeue.HandlerFunc {
+	return func(body json.RawMessage) error {
+		planMessage, err := ParseRabbitMQPlanMessage(body)
+		if err != nil {
+			log.Printf("Failed to parse message: %v", err)
+		}
+
+		parentId, ok := planMessage.Data["parentId"].(string)
+		if !ok {
+			parentId = ""
+		}
+
+		client.IndexDocument(planMessage.Key, planMessage.Data, parentId)
+		return nil
 	}
+}
 
-	switch strings.ToLower(msg.Action) {
-	case "create", "update":
-		client.IndexDocument(msg.Key, msg.Data, parentId)
-	case "delete":
-		client.DeleteDocument(msg.Key)
-	default:
-		log.Printf("Unknown action: %s", msg.Action)
+func ProcessDeletePlanNode(client *Client) messagequeue.HandlerFunc {
+	return func(body json.RawMessage) error {
+		planMessage, err := ParseRabbitMQPlanMessage(body)
+		if err != nil {
+			log.Printf("Failed to parse message: %v", err)
+		}
+
+		client.DeleteDocument(planMessage.Key)
+		return nil
 	}
 }

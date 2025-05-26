@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"eric-cw-hsu.github.io/internal/shared/logger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 )
 
 func StoreExtractedGraphNodes(collection *mongo.Collection, nodes map[string]map[string]interface{}) error {
@@ -22,6 +24,7 @@ func StoreExtractedGraphNodes(collection *mongo.Collection, nodes map[string]map
 		}
 		opts := options.Update().SetUpsert(true)
 		if _, err := collection.UpdateByID(ctx, id, update, opts); err != nil {
+			logger.Logger.Error("storage.StoreExtractedGraphNodes failed", zap.String("id", id), zap.Error(err))
 			return fmt.Errorf("failed to store node %s: %v", id, err)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"eric-cw-hsu.github.io/internal/elasticsearch"
 	"eric-cw-hsu.github.io/internal/elasticsearch/config"
 	"eric-cw-hsu.github.io/internal/rabbitmq"
+	"eric-cw-hsu.github.io/internal/shared/messagequeue"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,10 +15,23 @@ func main() {
 	cfg := config.Load()
 
 	// Initialize RabbitMQ Consumer
-	rabbitMQConsumer, err := rabbitmq.NewConsumer(cfg.RabbitMQ.URI, cfg.RabbitMQ.Queue)
+	rabbitMQConn, err := rabbitmq.NewMQConnection(cfg.RabbitMQ.URI)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect to RabbitMQ: %v", err))
+	}
+	defer rabbitMQConn.Close()
+	rabbitMQConsumer, err := messagequeue.NewConsumer(
+		rabbitMQConn.Channel,
+		cfg.RabbitMQ.Exchange,
+		cfg.RabbitMQ.Queue,
+		"plan.node.create",
+		"plan.node.update",
+		"plan.node.delete",
+	)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create RabbitMQ consumer: %v", err))
 	}
+	defer rabbitMQConsumer.Close()
 
 	// Initialize ElasticSearch Client
 	esClient, err := elasticsearch.NewElasticSearchClient(

@@ -20,8 +20,9 @@ type Config struct {
 		GoogleClientID string `mapstructure:"google_client_id"`
 	}
 	RabbitMQ struct {
-		URI   string
-		Queue string
+		URI      string
+		Queue    string
+		Exchange string
 	}
 	Redis struct {
 		URI string

@@ -4,9 +4,11 @@ import (
 	"context"
 	"time"
 
+	"eric-cw-hsu.github.io/internal/shared/logger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.uber.org/zap"
 )
 
 func GetNodeRaw(collection *mongo.Collection, id string) (map[string]interface{}, error) {
@@ -24,6 +26,7 @@ func GetNodeRaw(collection *mongo.Collection, id string) (map[string]interface{}
 func GetExpandedNode(collection *mongo.Collection, id string) (map[string]interface{}, error) {
 	rawNode, err := GetNodeRaw(collection, id)
 	if err != nil {
+		logger.Logger.Error("storage.GetExpandedNode failed", zap.String("id", id), zap.Error(err))
 		return nil, err
 	}
 	return expandRefs(collection, rawNode)
